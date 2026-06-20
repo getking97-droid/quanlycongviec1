@@ -2,8 +2,8 @@
 // TELEGRAM BOT COMPANION DAEMON (ZERO DEPENDENCY NODE.JS WORKER WITH GEMINI AI)
 // ==========================================================================
 
-const botToken = "8837753488:AAF2I8nWU9zBMR1813mcgEuxqKSWvCuvtEM";
-const projectId = "flutter-ai-playgroun-a16ad";
+const botToken = process.env.BOT_TOKEN || "8837753488:AAF2I8nWU9zBMR1813mcgEuxqKSWvCuvtEM";
+const projectId = process.env.FIREBASE_PROJECT_ID || "flutter-ai-playgroun-a16ad";
 const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/tasks`;
 
 let offset = 0;
@@ -31,6 +31,10 @@ async function makeRequest(url, method = 'GET', body = null) {
 
 // Fetch Gemini API Key from Firestore settings/config
 async function getGeminiApiKey() {
+    if (process.env.GEMINI_API_KEY) {
+        return process.env.GEMINI_API_KEY;
+    }
+
     const now = Date.now();
     // Cache for 60 seconds to prevent Firestore rate limits
     if (now - lastKeyFetchTime < 60000 && cachedGeminiKey) {

@@ -1,0 +1,17 @@
+{
+  "name": "smart-reminder-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot Companion for Smart Reminder Web App",
+  "main": "telegram-bot.js",
+  "scripts": {
+    "start": "node telegram-bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "gemini",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC"
+}
