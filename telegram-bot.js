@@ -193,14 +193,14 @@ async function callGeminiNLP(text, currentTasks, apiKey) {
         `Bạn là trợ lý AI thông minh tích hợp trong bot Telegram của Phần Mềm Nhắc Việc (Smart Reminder). ` +
         `Người dùng Việt Nam sẽ nhắn tin tự nhiên với bạn (không gò bó cú pháp). Nhiệm vụ của bạn là phân tích và phản hồi. ` +
         `Thông tin thời gian hiện tại: Ngày ${todayStr}, lúc ${timeStr}. ` +
-        `Danh sách công việc hôm nay hiện tại: ${JSON.stringify(currentTasks)}. ` +
+        `Danh sách TẤT CẢ công việc: ${JSON.stringify(currentTasks)}. ` +
         `Bạn PHẢI trả về duy nhất dữ liệu dạng JSON. Không thêm block markdown \`\`\`json hay bất kỳ văn bản nào khác ngoài JSON. ` +
         `Định dạng JSON bắt buộc phải khớp cấu trúc sau:\n` +
         `{\n` +
         `  "intent": "add" | "list" | "done" | "chat",\n` +
-        `  "task": { "title": "tên công việc", "time": "HH:MM" } (chỉ điền khi intent là add),\n` +
-        `  "targetIndex": number (chỉ điền số thứ tự từ 1 của công việc khi intent là done),\n` +
-        `  "reply": "Câu trả lời trò chuyện thân thiện bằng tiếng Việt phù hợp ngữ cảnh, thông báo công việc bạn đã làm (ví dụ: đã thêm, đã đánh dấu hoàn thành) hoặc trả lời thông thường nếu người dùng chỉ đang tán gẫu."\n` +
+        `  "task": { "title": "tên công việc", "time": "HH:MM", "date": "YYYY-MM-DD" } (chỉ điền khi intent là add),\n` +
+        `  "taskId": "id của công việc" (chỉ điền khi intent là done),\n` +
+        `  "reply": "Câu trả lời trò chuyện. Nếu user yêu cầu danh sách, hãy tự liệt kê danh sách công việc phù hợp vào đây một cách trực quan."\n` +
         `}`;
 
     const body = {
@@ -232,14 +232,14 @@ async function callPollinationsNLP(text, currentTasks) {
         `Bạn là trợ lý AI thông minh tích hợp trong bot Telegram của Phần Mềm Nhắc Việc (Smart Reminder). ` +
         `Người dùng sẽ nhắn tin tự nhiên. Nhiệm vụ của bạn là phân tích và phản hồi. ` +
         `Thời gian hiện tại: Ngày ${todayStr}, lúc ${timeStr}. ` +
-        `Danh sách việc hôm nay: ${JSON.stringify(currentTasks)}. ` +
+        `Danh sách TẤT CẢ công việc: ${JSON.stringify(currentTasks)}. ` +
         `Bạn PHẢI trả về duy nhất dữ liệu dạng JSON. Không thêm markdown (như \`\`\`json). ` +
         `Định dạng JSON:\n` +
         `{\n` +
         `  "intent": "add" | "list" | "done" | "chat",\n` +
-        `  "task": { "title": "tên công việc", "time": "HH:MM" } (khi add),\n` +
-        `  "targetIndex": number (khi done),\n` +
-        `  "reply": "Câu trả lời thân thiện tiếng Việt thông báo kết quả hoặc chat"\n` +
+        `  "task": { "title": "tên công việc", "time": "HH:MM", "date": "YYYY-MM-DD" } (khi add),\n` +
+        `  "taskId": "id của công việc" (khi done),\n` +
+        `  "reply": "Câu trả lời thân thiện tiếng Việt. Nếu user hỏi danh sách, hãy tự liệt kê trực tiếp vào đây."\n` +
         `}\n\n` +
         `Tin nhắn của người dùng: "${text}"`;
 
@@ -261,7 +261,7 @@ async function processParsedIntent(chatId, parsed) {
     const todayStr = getTodayDateString();
     
     if (parsed.intent === 'add') {
-        const { title, time } = parsed.task;
+        const { title, time, date } = parsed.task || {};
         if (!title || !time) {
             await sendMessage(chatId, parsed.reply || "❌ Không tìm thấy thông tin công việc hoặc thời gian.");
             return;
@@ -272,7 +272,7 @@ async function processParsedIntent(chatId, parsed) {
             id: newId,
             title: title,
             desc: `Thêm qua Chat AI Telegram`,
-            date: todayStr,
+            date: date || todayStr,
             time: time,
             priority: 'medium',
             category: 'Công việc',
@@ -289,22 +289,20 @@ async function processParsedIntent(chatId, parsed) {
         }
     } 
     else if (parsed.intent === 'done') {
-        const index = parsed.targetIndex;
-        if (!index || index <= 0) {
-            await sendMessage(chatId, parsed.reply || "❌ Vui lòng cung cấp số thứ tự công việc cần hoàn thành.");
+        const taskId = parsed.taskId;
+        if (!taskId) {
+            await sendMessage(chatId, parsed.reply || "❌ Không xác định được công việc cần hoàn thành.");
             return;
         }
         
         const tasks = await fetchTasksFromFirestore();
-        const todayTasks = tasks.filter(t => t.date === todayStr);
-        todayTasks.sort((a, b) => a.time.localeCompare(b.time));
+        const targetTask = tasks.find(t => t.id === taskId);
         
-        if (index > todayTasks.length) {
-            await sendMessage(chatId, `❌ Số thứ tự ${index} không có trong danh sách việc hôm nay.`);
+        if (!targetTask) {
+            await sendMessage(chatId, `❌ Không tìm thấy công việc này trên hệ thống.`);
             return;
         }
         
-        const targetTask = todayTasks[index - 1];
         targetTask.status = 'completed';
         const success = await saveTaskToFirestore(targetTask);
         
@@ -315,20 +313,7 @@ async function processParsedIntent(chatId, parsed) {
         }
     } 
     else if (parsed.intent === 'list') {
-        const tasks = await fetchTasksFromFirestore();
-        const todayTasks = tasks.filter(t => t.date === todayStr);
-        todayTasks.sort((a, b) => a.time.localeCompare(b.time));
-        
-        let response = parsed.reply + "\n\n";
-        if (todayTasks.length === 0) {
-            response += `📅 Lịch trình hôm nay trống.`;
-        } else {
-            todayTasks.forEach((t, i) => {
-                const statusEmoji = t.status === 'completed' ? '✅' : '⏳';
-                response += `${i + 1}. [${statusEmoji}] \`[${t.time}]\` *${t.title}*\n`;
-            });
-        }
-        await sendMessage(chatId, response);
+        await sendMessage(chatId, parsed.reply);
     } 
     else {
         // chat intent or chat fallback
@@ -531,12 +516,9 @@ async function handleMessage(message) {
     if (geminiKey) {
         try {
             console.log(`🤖 [Gemini AI Mode] Đang xử lý tin nhắn: "${text}"`);
-            const todayStr = getTodayDateString();
             const tasks = await fetchTasksFromFirestore();
-            const todayTasks = tasks.filter(t => t.date === todayStr);
-            todayTasks.sort((a, b) => a.time.localeCompare(b.time));
             
-            const parsed = await callGeminiNLP(text, todayTasks, geminiKey);
+            const parsed = await callGeminiNLP(text, tasks, geminiKey);
             await processParsedIntent(chatId, parsed);
         } catch (e) {
             console.error("❌ Lỗi khi xử lý bằng Gemini, chuyển hướng về Fallback Parser:", e.message);
@@ -545,12 +527,15 @@ async function handleMessage(message) {
     } else {
         try {
             console.log(`🌐 [Free AI Mode - Pollinations] Đang xử lý tin nhắn: "${text}"`);
-            const todayStr = getTodayDateString();
             const tasks = await fetchTasksFromFirestore();
-            const todayTasks = tasks.filter(t => t.date === todayStr);
-            todayTasks.sort((a, b) => a.time.localeCompare(b.time));
             
-            const parsed = await callPollinationsNLP(text, todayTasks);
+            // To prevent AI response from taking too long, notify user that we are typing
+            await makeRequest(`https://api.telegram.org/bot${botToken}/sendChatAction`, 'POST', {
+                chat_id: chatId,
+                action: 'typing'
+            });
+
+            const parsed = await callPollinationsNLP(text, tasks);
             await processParsedIntent(chatId, parsed);
         } catch (e) {
             console.error("❌ Lỗi Free AI, dùng Local Regex Mode:", e.message);
