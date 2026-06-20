@@ -220,6 +220,38 @@ async function callGeminiNLP(text, currentTasks, apiKey) {
     return JSON.parse(rawText);
 }
 
+// Call Pollinations API (Free AI) to parse natural language message
+async function callPollinationsNLP(text, currentTasks) {
+    const todayStr = getTodayDateString();
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const local = new Date(utc + (3600000 * 7));
+    const timeStr = local.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    
+    const systemPrompt = 
+        `Bạn là trợ lý AI thông minh tích hợp trong bot Telegram của Phần Mềm Nhắc Việc (Smart Reminder). ` +
+        `Người dùng sẽ nhắn tin tự nhiên. Nhiệm vụ của bạn là phân tích và phản hồi. ` +
+        `Thời gian hiện tại: Ngày ${todayStr}, lúc ${timeStr}. ` +
+        `Danh sách việc hôm nay: ${JSON.stringify(currentTasks)}. ` +
+        `Bạn PHẢI trả về duy nhất dữ liệu dạng JSON. Không thêm markdown (như \`\`\`json). ` +
+        `Định dạng JSON:\n` +
+        `{\n` +
+        `  "intent": "add" | "list" | "done" | "chat",\n` +
+        `  "task": { "title": "tên công việc", "time": "HH:MM" } (khi add),\n` +
+        `  "targetIndex": number (khi done),\n` +
+        `  "reply": "Câu trả lời thân thiện tiếng Việt thông báo kết quả hoặc chat"\n` +
+        `}\n\n` +
+        `Tin nhắn của người dùng: "${text}"`;
+
+    const url = "https://text.pollinations.ai/" + encodeURIComponent(systemPrompt) + "?json=true";
+    const res = await fetch(url, { method: 'POST' });
+    if (!res.ok) throw new Error("Pollinations API Error");
+    const textRes = await res.text();
+    
+    const cleanText = textRes.replace(/```json/gi, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanText);
+}
+
 // Process intent and perform Firestore updates
 async function processParsedIntent(chatId, parsed) {
     const todayStr = getTodayDateString();
@@ -507,8 +539,19 @@ async function handleMessage(message) {
             await handleFallbackNLP(chatId, text, username);
         }
     } else {
-        console.log(`📡 [Local Parsing Mode] Đang xử lý tin nhắn: "${text}"`);
-        await handleFallbackNLP(chatId, text, username);
+        try {
+            console.log(`🌐 [Free AI Mode - Pollinations] Đang xử lý tin nhắn: "${text}"`);
+            const todayStr = getTodayDateString();
+            const tasks = await fetchTasksFromFirestore();
+            const todayTasks = tasks.filter(t => t.date === todayStr);
+            todayTasks.sort((a, b) => a.time.localeCompare(b.time));
+            
+            const parsed = await callPollinationsNLP(text, todayTasks);
+            await processParsedIntent(chatId, parsed);
+        } catch (e) {
+            console.error("❌ Lỗi Free AI, dùng Local Regex Mode:", e.message);
+            await handleFallbackNLP(chatId, text, username);
+        }
     }
 }
 
