@@ -12,9 +12,15 @@ const ReminderApp = {
         this.loadState();
         this.applyTheme(this.currentTheme);
         this.setupEventListeners();
-        this.initSubModules();
         this.updateClock();
-        this.renderAll();
+        
+        // If Firebase is enabled, setup onSnapshot subscription, otherwise load from localStorage
+        if (isFirebaseEnabled() && firestoreDb) {
+            this.initFirebaseSync();
+        } else {
+            this.initSubModules();
+            this.renderAll();
+        }
         
         // Notification alarm check loop
         ReminderNotifications.initChecker(() => this.checkOverdueTasks());
@@ -23,30 +29,75 @@ const ReminderApp = {
         setInterval(() => this.updateClock(), 1000);
     },
 
-    // Load from LocalStorage
-    loadState() {
-        try {
+    // Initialize real-time sync with Cloud Firestore
+    initFirebaseSync() {
+        console.log("🔄 Đang thiết lập đồng bộ thời gian thực với Cloud Firestore...");
+        
+        firestoreDb.collection('tasks').onSnapshot(snapshot => {
+            const fetchedTasks = [];
+            snapshot.forEach(doc => {
+                fetchedTasks.push({ id: doc.id, ...doc.data() });
+            });
+            
+            // Seed database if empty and not seeded before
+            if (fetchedTasks.length === 0 && !localStorage.getItem('reminder_firebase_seeded')) {
+                console.log("🌱 Kho dữ liệu trống. Đang nạp dữ liệu mẫu lên Firestore...");
+                const mockTasks = this.getMockTasks();
+                mockTasks.forEach(task => {
+                    firestoreDb.collection('tasks').doc(task.id).set(task);
+                });
+                localStorage.setItem('reminder_firebase_seeded', 'true');
+                return;
+            }
+
+            this.tasks = fetchedTasks;
+            this.initSubModules();
+            this.renderAll();
+        }, error => {
+            console.error("❌ Lỗi đồng bộ Firebase Firestore:", error);
+            alert("Không thể kết nối với Firestore. Vui lòng kiểm tra lại cấu hình Firebase hoặc Quy tắc bảo mật (Security Rules) trên Firebase Console.");
+            
+            // Fallback to local state if Firestore fails
+            console.log("💾 Kích hoạt cơ chế dự phòng: Tải dữ liệu từ LocalStorage.");
             const savedTasks = localStorage.getItem('reminder_tasks');
             this.tasks = savedTasks ? JSON.parse(savedTasks) : this.getMockTasks();
-            
+            this.initSubModules();
+            this.renderAll();
+        });
+    },
+
+    // Load local settings from LocalStorage
+    loadState() {
+        try {
             this.currentTheme = localStorage.getItem('reminder_theme') || 'dark';
             ReminderNotifications.soundType = localStorage.getItem('reminder_sound') || 'bell';
             
+            // If Firebase is disabled, we load tasks list from localStorage
+            if (!isFirebaseEnabled() || !firestoreDb) {
+                const savedTasks = localStorage.getItem('reminder_tasks');
+                this.tasks = savedTasks ? JSON.parse(savedTasks) : this.getMockTasks();
+            }
+
             // Set alarm sound dropdown state
             const soundSelect = document.getElementById('setting-sound-type');
             if (soundSelect) soundSelect.value = ReminderNotifications.soundType;
         } catch (e) {
-            console.error("Lỗi khi tải dữ liệu từ localStorage:", e);
-            this.tasks = this.getMockTasks();
+            console.error("Lỗi khi tải cấu hình từ localStorage:", e);
+            if (!this.tasks || this.tasks.length === 0) {
+                this.tasks = this.getMockTasks();
+            }
         }
     },
 
-    // Save to LocalStorage
+    // Save settings locally (fallback tasks list saved here only when Firebase is disabled)
     saveState() {
         try {
-            localStorage.setItem('reminder_tasks', JSON.stringify(this.tasks));
             localStorage.setItem('reminder_theme', this.currentTheme);
             localStorage.setItem('reminder_sound', ReminderNotifications.soundType);
+            
+            if (!isFirebaseEnabled() || !firestoreDb) {
+                localStorage.setItem('reminder_tasks', JSON.stringify(this.tasks));
+            }
         } catch (e) {
             console.error("Lỗi khi lưu dữ liệu vào localStorage:", e);
         }
@@ -259,11 +310,19 @@ const ReminderApp = {
         // Danger zone clear data
         document.getElementById('btn-clear-data').addEventListener('click', () => {
             if (confirm("CẢNH BÁO: Hành động này sẽ xóa vĩnh viễn tất cả nhắc nhở của bạn. Bạn có muốn tiếp tục?")) {
-                localStorage.clear();
-                this.tasks = [];
-                this.saveState();
-                this.initSubModules();
-                this.renderAll();
+                if (isFirebaseEnabled() && firestoreDb) {
+                    this.tasks.forEach(task => {
+                        firestoreDb.collection('tasks').doc(task.id).delete()
+                            .catch(err => console.error("Lỗi khi xóa tài liệu Firestore:", err));
+                    });
+                    localStorage.removeItem('reminder_firebase_seeded');
+                } else {
+                    localStorage.clear();
+                    this.tasks = [];
+                    this.saveState();
+                    this.initSubModules();
+                    this.renderAll();
+                }
                 alert("Dữ liệu đã được xóa hoàn tất.");
             }
         });
@@ -598,32 +657,43 @@ const ReminderApp = {
 
     // Trigger state changes on status change
     updateTaskStatus(id, newStatus) {
+        let updatedTask = null;
         this.tasks = this.tasks.map(task => {
             if (task.id === id) {
-                // If moving from completed back to todo/inprogress, allow alarm to fire again
                 const wasCompleted = task.status === 'completed';
                 const isStatusReversed = newStatus !== 'completed' && wasCompleted;
-                return { 
+                updatedTask = { 
                     ...task, 
                     status: newStatus, 
                     alarmed: isStatusReversed ? false : task.alarmed 
                 };
+                return updatedTask;
             }
             return task;
         });
 
-        this.saveState();
-        this.initSubModules();
-        this.renderAll();
+        if (isFirebaseEnabled() && firestoreDb && updatedTask) {
+            firestoreDb.collection('tasks').doc(id).set(updatedTask)
+                .catch(err => console.error("Lỗi đồng bộ cập nhật Firebase:", err));
+        } else {
+            this.saveState();
+            this.initSubModules();
+            this.renderAll();
+        }
     },
 
     // Delete task handler
     deleteTask(id) {
         if (confirm("Bạn có chắc chắn muốn xóa nhắc nhở này?")) {
-            this.tasks = this.tasks.filter(t => t.id !== id);
-            this.saveState();
-            this.initSubModules();
-            this.renderAll();
+            if (isFirebaseEnabled() && firestoreDb) {
+                firestoreDb.collection('tasks').doc(id).delete()
+                    .catch(err => console.error("Lỗi xóa trên Firebase:", err));
+            } else {
+                this.tasks = this.tasks.filter(t => t.id !== id);
+                this.saveState();
+                this.initSubModules();
+                this.renderAll();
+            }
         }
     },
 
@@ -690,30 +760,35 @@ const ReminderApp = {
         const category = document.getElementById('task-category').value;
         const recurrence = document.getElementById('task-recurrence').value;
 
+        let targetTask;
+
         if (id) {
             // Edit existing
-            this.tasks = this.tasks.map(t => {
-                if (t.id === id) {
-                    // Reset alarmed flag if time or date changed
-                    const timeChanged = t.date !== date || t.time !== time;
-                    return {
-                        ...t,
-                        title,
-                        desc,
-                        date,
-                        time,
-                        priority,
-                        category,
-                        recurrence,
-                        alarmed: timeChanged ? false : t.alarmed
-                    };
-                }
-                return t;
-            });
+            const existingTask = this.tasks.find(t => t.id === id);
+            const timeChanged = existingTask.date !== date || existingTask.time !== time;
+            targetTask = {
+                ...existingTask,
+                title,
+                desc,
+                date,
+                time,
+                priority,
+                category,
+                recurrence,
+                alarmed: timeChanged ? false : existingTask.alarmed
+            };
+
+            if (isFirebaseEnabled() && firestoreDb) {
+                firestoreDb.collection('tasks').doc(id).set(targetTask)
+                    .catch(err => console.error("Lỗi lưu sửa đổi Firebase:", err));
+            } else {
+                this.tasks = this.tasks.map(t => t.id === id ? targetTask : t);
+            }
         } else {
             // Create new
-            const newTask = {
-                id: 'task-' + Date.now(),
+            const newId = 'task-' + Date.now();
+            targetTask = {
+                id: newId,
                 title,
                 desc,
                 date,
@@ -724,13 +799,21 @@ const ReminderApp = {
                 status: 'todo',
                 alarmed: false
             };
-            this.tasks.push(newTask);
+
+            if (isFirebaseEnabled() && firestoreDb) {
+                firestoreDb.collection('tasks').doc(newId).set(targetTask)
+                    .catch(err => console.error("Lỗi lưu thêm mới Firebase:", err));
+            } else {
+                this.tasks.push(targetTask);
+            }
         }
 
-        this.saveState();
+        if (!isFirebaseEnabled()) {
+            this.saveState();
+            this.initSubModules();
+            this.renderAll();
+        }
         this.closeTaskModal();
-        this.initSubModules();
-        this.renderAll();
     },
 
     // Handle Dashboard Quick Add Submit
@@ -743,8 +826,9 @@ const ReminderApp = {
 
         if (!titleInput || !timeInput || !priorityInput) return;
 
+        const newId = 'task-' + Date.now();
         const newTask = {
-            id: 'task-' + Date.now(),
+            id: newId,
             title: titleInput.value,
             desc: '',
             date: this.getTodayDateString(),
@@ -756,14 +840,18 @@ const ReminderApp = {
             alarmed: false
         };
 
-        this.tasks.push(newTask);
-        this.saveState();
+        if (isFirebaseEnabled() && firestoreDb) {
+            firestoreDb.collection('tasks').doc(newId).set(newTask)
+                .catch(err => console.error("Lỗi lưu thêm nhanh Firebase:", err));
+        } else {
+            this.tasks.push(newTask);
+            this.saveState();
+            this.initSubModules();
+            this.renderAll();
+        }
         
         // Reset quick form inputs
         titleInput.value = '';
-        
-        this.initSubModules();
-        this.renderAll();
     },
 
     // Poller matching criteria to trigger active alarms
@@ -793,40 +881,35 @@ const ReminderApp = {
         if (!task) return;
 
         ReminderNotifications.stopAlarm();
+        let updatedTask;
 
         if (task.recurrence !== 'none') {
             // Update date to next interval
-            const updatedTasks = this.tasks.map(t => {
-                if (t.id === task.id) {
-                    const nextDate = this.calculateNextRecurrenceDate(t.date, t.recurrence);
-                    return {
-                        ...t,
-                        date: nextDate,
-                        alarmed: false, // Reset alarm flag for next interval
-                        status: 'todo'  // Reset status to uncompleted
-                    };
-                }
-                return t;
-            });
-            this.tasks = updatedTasks;
+            const nextDate = this.calculateNextRecurrenceDate(task.date, task.recurrence);
+            updatedTask = {
+                ...task,
+                date: nextDate,
+                alarmed: false, // Reset alarm flag for next interval
+                status: 'todo'  // Reset status to uncompleted
+            };
         } else {
             // Mark single alarm as completed
-            const updatedTasks = this.tasks.map(t => {
-                if (t.id === task.id) {
-                    return {
-                        ...t,
-                        status: 'completed',
-                        alarmed: true
-                    };
-                }
-                return t;
-            });
-            this.tasks = updatedTasks;
+            updatedTask = {
+                ...task,
+                status: 'completed',
+                alarmed: true
+            };
         }
 
-        this.saveState();
-        this.initSubModules();
-        this.renderAll();
+        if (isFirebaseEnabled() && firestoreDb) {
+            firestoreDb.collection('tasks').doc(task.id).set(updatedTask)
+                .catch(err => console.error("Lỗi lưu Firebase khi tắt báo thức:", err));
+        } else {
+            this.tasks = this.tasks.map(t => t.id === task.id ? updatedTask : t);
+            this.saveState();
+            this.initSubModules();
+            this.renderAll();
+        }
     },
 
     // Snooze active alarm (delays it by 5 minutes)
@@ -848,21 +931,22 @@ const ReminderApp = {
         const nextDateStr = `${yyyy}-${mm}-${dd}`;
         const nextTimeStr = `${hh}:${min}`;
 
-        this.tasks = this.tasks.map(t => {
-            if (t.id === task.id) {
-                return {
-                    ...t,
-                    date: nextDateStr,
-                    time: nextTimeStr,
-                    alarmed: false // Reset alarm flag to fire again
-                };
-            }
-            return t;
-        });
+        const updatedTask = {
+            ...task,
+            date: nextDateStr,
+            time: nextTimeStr,
+            alarmed: false // Reset alarm flag to fire again
+        };
 
-        this.saveState();
-        this.initSubModules();
-        this.renderAll();
+        if (isFirebaseEnabled() && firestoreDb) {
+            firestoreDb.collection('tasks').doc(task.id).set(updatedTask)
+                .catch(err => console.error("Lỗi hoãn báo thức trên Firebase:", err));
+        } else {
+            this.tasks = this.tasks.map(t => t.id === task.id ? updatedTask : t);
+            this.saveState();
+            this.initSubModules();
+            this.renderAll();
+        }
     },
 
     // Calculation helper for recurring tasks
