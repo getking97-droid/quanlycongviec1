@@ -71,6 +71,30 @@ async function sendMessage(chatId, text) {
     }
 }
 
+// Helper: Save Chat ID to Firestore so the Cron job knows who to remind
+let savedChatId = null;
+async function saveChatId(chatId) {
+    if (savedChatId === chatId) return;
+    try {
+        const configUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/settings/config`;
+        
+        // Fetch existing first to preserve other fields like geminiApiKey
+        let existingFields = {};
+        try {
+            const data = await makeRequest(configUrl);
+            if (data && data.fields) existingFields = data.fields;
+        } catch(e) {}
+        
+        existingFields.telegramChatId = { stringValue: String(chatId) };
+        
+        await makeRequest(configUrl, 'PATCH', { fields: existingFields });
+        savedChatId = chatId;
+        console.log(`✅ Đã lưu Chat ID (${chatId}) vào hệ thống để gửi thông báo tự động.`);
+    } catch (e) {
+        console.error("❌ Lỗi khi lưu Chat ID:", e.message);
+    }
+}
+
 // Fetch tasks from Firestore REST API
 async function fetchTasksFromFirestore() {
     try {
@@ -495,6 +519,9 @@ async function handleMessage(message) {
     const text = message.text ? message.text.trim() : "";
     const username = message.from.first_name || "bạn";
 
+    // Lắng nghe và lưu Chat ID để bot có thể tự chủ động nhắn tin sau này
+    await saveChatId(chatId);
+
     if (!text) return;
 
     // Check if the command is system command (/start or /help)
@@ -564,5 +591,53 @@ async function startPolling() {
     }
 }
 
-// Start polling
+// Background Cron Job: Check and send reminders every minute
+async function startCronJob() {
+    setInterval(async () => {
+        try {
+            // Check if we have a destination chat ID
+            let targetChatId = savedChatId;
+            if (!targetChatId) {
+                const configUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/settings/config`;
+                try {
+                    const data = await makeRequest(configUrl);
+                    if (data && data.fields && data.fields.telegramChatId) {
+                        targetChatId = data.fields.telegramChatId.stringValue;
+                        savedChatId = targetChatId;
+                    }
+                } catch(e) {}
+            }
+            
+            if (!targetChatId) return; // Cannot send message if we don't know who to send it to
+
+            const todayStr = getTodayDateString();
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            const local = new Date(utc + (3600000 * 7));
+            const currentHHMM = local.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            const tasks = await fetchTasksFromFirestore();
+            
+            for (const task of tasks) {
+                // If the task is scheduled for today, at the current minute, is not completed, and hasn't been alarmed
+                if (task.date === todayStr && task.time === currentHHMM && task.status !== 'completed' && !task.alarmed) {
+                    
+                    const msg = `⏰ **ĐẾN GIỜ HẸN!**\n\n📌 *Công việc:* ${task.title}\n🕒 *Thời gian:* ${task.time}\n\n👉 Chúc sếp hoàn thành tốt công việc!`;
+                    await sendMessage(targetChatId, msg);
+                    
+                    // Mark as alarmed to prevent duplicate notifications
+                    task.alarmed = true;
+                    await saveTaskToFirestore(task);
+                    console.log(`🔔 Đã gửi nhắc nhở tự động cho công việc: ${task.title}`);
+                }
+            }
+        } catch (e) {
+            console.error("⚠️ Lỗi vòng lặp Cron Nhắc nhở:", e.message);
+        }
+    }, 60000); // Run every 60 seconds
+}
+
+// Khởi chạy hệ thống
 startPolling();
+startCronJob();
+
