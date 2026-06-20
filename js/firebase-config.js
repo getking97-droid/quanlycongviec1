@@ -5,12 +5,13 @@
 // Copy and paste your Web App configuration from the Firebase Console here.
 // Go to: Firebase Console -> Project Settings -> General -> Your apps -> Add app (Web)
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "quanlycongviec1.firebaseapp.com",
-    projectId: "quanlycongviec1",
-    storageBucket: "quanlycongviec1.firebasestorage.app",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDBflE_tjS9WV5oGYf-NTDT403PzH-jz94",
+  authDomain: "flutter-ai-playgroun-a16ad.firebaseapp.com",
+  databaseURL: "https://flutter-ai-playgroun-a16ad-default-rtdb.firebaseio.com",
+  projectId: "flutter-ai-playgroun-a16ad",
+  storageBucket: "flutter-ai-playgroun-a16ad.firebasestorage.app",
+  messagingSenderId: "164986767650",
+  appId: "1:164986767650:web:736579875ca441e1763d7b"
 };
 
 // Check if the placeholder config has been replaced with actual credentials
