@@ -135,6 +135,46 @@ function getTodayDateString() {
     return `${yyyy}-${mm}-${dd}`;
 }
 
+// Helper: Extract date from text in local fallback mode
+function parseDateFromText(text) {
+    const d = new Date();
+    const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+    const local = new Date(utc + (3600000 * 7)); // Vietnam GMT+7
+
+    let dateMatch = false;
+
+    if (/\b(hôm nay)\b/i.test(text)) {
+        dateMatch = true; // keep today
+    } else if (/\b(ngày mai|mai)\b/i.test(text)) {
+        local.setDate(local.getDate() + 1);
+        dateMatch = true;
+    } else if (/\b(ngày mốt|mốt)\b/i.test(text)) {
+        local.setDate(local.getDate() + 2);
+        dateMatch = true;
+    } else if (/\b(hôm qua)\b/i.test(text)) {
+        local.setDate(local.getDate() - 1);
+        dateMatch = true;
+    } else {
+        // Match formats: DD/MM/YYYY, DD-MM-YYYY, DD/MM, DD-MM
+        const regex = /(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?/;
+        const match = text.match(regex);
+        if (match) {
+            const day = parseInt(match[1], 10);
+            const month = parseInt(match[2], 10) - 1;
+            const year = match[3] ? parseInt(match[3], 10) : local.getFullYear();
+            local.setFullYear(year, month, day);
+            dateMatch = true;
+        }
+    }
+    
+    if (!dateMatch) return null;
+
+    const yyyy = local.getFullYear();
+    const mm = String(local.getMonth() + 1).padStart(2, '0');
+    const dd = String(local.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
 // Call Gemini API to parse natural language message
 async function callGeminiNLP(text, currentTasks, apiKey) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -260,7 +300,47 @@ async function processParsedIntent(chatId, parsed) {
 async function handleFallbackNLP(chatId, text, username) {
     const todayStr = getTodayDateString();
     
-    // 1. List intent check
+    // 1. Check for casual chat statements first
+    if (/^(sao ngu vậy|ngu|kém|dốt|chán|sao ngu the)/i.test(text)) {
+        await sendMessage(chatId, `Hì hì, xin lỗi bạn nhiều nhé! 🥺 Hiện tại do bạn chưa nhập **Gemini API Key** trên trang Cài đặt Web nên mình đang phải xử lý tin nhắn bằng chế độ offline (regex) thô sơ.\n\n👉 Bạn hãy lấy một mã khóa AI miễn phí tại [Google AI Studio](https://aistudio.google.com/) rồi dán vào mục Cài đặt Web để mình thông minh hơn và trò chuyện tự nhiên bằng AI nhé! 🤖`);
+        return;
+    }
+    
+    if (/^(ok|được|yes|ừ|ok bot)/i.test(text)) {
+        await sendMessage(chatId, `Dạ vâng ạ! Bạn có việc gì cần mình nhắc nhở không?`);
+        return;
+    }
+
+    if (/^(cảm ơn|cám ơn|thanks|thank you|cảm ơn bot)/i.test(text)) {
+        await sendMessage(chatId, `Không có gì đâu nè! Rất vui được hỗ trợ bạn. Chúc bạn có một ngày tuyệt vời nhé! ❤️`);
+        return;
+    }
+
+    // 2. Query date check (looks for mốt, mai, 22/6, etc.)
+    const parsedDate = parseDateFromText(text);
+    if (parsedDate && /(việc|lịch|gì không|danh sách|có việc)/i.test(text)) {
+        const tasks = await fetchTasksFromFirestore();
+        const dateTasks = tasks.filter(t => t.date === parsedDate);
+        dateTasks.sort((a, b) => a.time.localeCompare(b.time));
+        
+        const dateObj = new Date(parsedDate);
+        const formattedDate = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        
+        if (dateTasks.length === 0) {
+            await sendMessage(chatId, `📅 Bạn không có nhắc nhở nào trong ngày *${formattedDate}*!`);
+            return;
+        }
+        
+        let reply = `📅 *Danh sách nhắc nhở ngày ${formattedDate}:*\n\n`;
+        dateTasks.forEach((task, idx) => {
+            const statusEmoji = task.status === 'completed' ? '✅' : '⏳';
+            reply += `${idx + 1}. [${statusEmoji}] \`[${task.time}]\` *${task.title}*\n`;
+        });
+        await sendMessage(chatId, reply);
+        return;
+    }
+    
+    // 3. Simple list check fallback (today)
     if (/(danh sách|lịch hôm nay|việc hôm nay|có việc gì|làm gì|chưa xong)/i.test(text)) {
         const tasks = await fetchTasksFromFirestore();
         const todayTasks = tasks.filter(t => t.date === todayStr);
@@ -280,7 +360,7 @@ async function handleFallbackNLP(chatId, text, username) {
         return;
     }
     
-    // 2. Done intent check
+    // 4. Done intent check
     const doneMatch = text.match(/(xong|hoàn thành|đã làm xong)\s*(việc)?\s*(\d+)/i);
     if (doneMatch) {
         const index = parseInt(doneMatch[3], 10);
@@ -299,7 +379,7 @@ async function handleFallbackNLP(chatId, text, username) {
         return;
     }
     
-    // 3. Add intent check
+    // 5. Add intent check
     const addKeywords = /(nhắc|thêm|cần|phải|tạo)/i.test(text);
     const timeRegex = /(?:lúc\s+)?([0-2]?[0-9])[:h]([0-5][0-9])?\s*(chiều|tối|đêm|sáng)?/i;
     const timeMatch = text.match(timeRegex);
@@ -315,7 +395,7 @@ async function handleFallbackNLP(chatId, text, username) {
         
         const formattedTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
         
-        // Extract title: remove keywords and the matched time expression
+        // Extract title
         let title = text
             .replace(/(nhắc tôi|nhắc|thêm việc|thêm|tôi cần|cần phải|tạo)/ig, '')
             .replace(timeRegex, '')
@@ -346,16 +426,41 @@ async function handleFallbackNLP(chatId, text, username) {
         }
     }
     
-    // 4. Chat/Greeting Fallback
+    // 6. Generic date-only check (e.g., if user just sends "22/6")
+    if (parsedDate) {
+        const tasks = await fetchTasksFromFirestore();
+        const dateTasks = tasks.filter(t => t.date === parsedDate);
+        dateTasks.sort((a, b) => a.time.localeCompare(b.time));
+        
+        const dateObj = new Date(parsedDate);
+        const formattedDate = dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        
+        if (dateTasks.length === 0) {
+            await sendMessage(chatId, `📅 Bạn không có nhắc nhở nào trong ngày *${formattedDate}*!`);
+        } else {
+            let reply = `📅 *Danh sách nhắc nhở ngày ${formattedDate}:* \n\n`;
+            dateTasks.forEach((task, idx) => {
+                const statusEmoji = task.status === 'completed' ? '✅' : '⏳';
+                reply += `${idx + 1}. [${statusEmoji}] \`[${task.time}]\` *${task.title}*\n`;
+            });
+            await sendMessage(chatId, reply);
+        }
+        return;
+    }
+
+    // 7. Greeting Fallback
     if (/(chào|hi|hello|alo|bot ơi|ơi)/i.test(text)) {
-        await sendMessage(chatId, `Chào bạn *${username}*! Mình là Trợ lý nhắc nhở thông minh. Bạn có thể trò chuyện tự nhiên với mình:\n\n` +
+        await sendMessage(chatId, `Chào bạn *${username}*! Mình là Trợ lý nhắc nhở. Bạn có thể trò chuyện tự nhiên với mình:\n\n` +
                                   `*Ví dụ:* \n` +
-                                  `👉 "nhắc tôi đi mua đồ lúc 17:30"\n` +
-                                  `👉 "hôm nay mình cần làm gì thế"\n` +
-                                  `👉 "xong việc số 1 rồi"\n\n` +
-                                  `💡 _Mẹo: Nhập khóa Gemini API trong phần Cài đặt Web để kích hoạt khả năng hiểu ngôn ngữ siêu đỉnh của AI nhé!_`);
+                                  `👉 "nhắc tôi đi mua sữa lúc 17:30"\n` +
+                                  `👉 "mốt có việc gì làm không bot"\n` +
+                                  `👉 "xong việc số 1 rồi nha"\n\n` +
+                                  `💡 _Mẹo: Nhập khóa Gemini API trong phần Cài đặt Web để kích hoạt AI hiểu ngôn ngữ cực đỉnh nhé!_`);
     } else {
-        await sendMessage(chatId, `❓ Mình chưa hiểu ý bạn lắm. Bạn thử nói lại rõ ràng hơn (ví dụ: "nhắc tôi họp lúc 15h" hoặc "hôm nay có việc gì không") nhé!`);
+        await sendMessage(chatId, `❓ Mình chưa hiểu ý bạn lắm. Bạn thử nói lại rõ ràng hơn nhé:\n\n` +
+                                  `👉 Để hỏi lịch: "mai có lịch gì không", "22/6 có việc gì không"\n` +
+                                  `👉 Để thêm việc: "nhắc tôi họp lúc 15h"\n` +
+                                  `👉 Để hoàn thành: "xong việc số 1"`);
     }
 }
 
