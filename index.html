@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phần Mềm Nhắc Việc - Smart Reminder</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="dark-theme">
+    <!-- Notification Overlay (Active Alarm) -->
+    <div id="alarm-overlay" class="alarm-overlay hidden">
+        <div class="alarm-card glass">
+            <div class="alarm-pulse">
+                <svg viewBox="0 0 24 24" width="64" height="64" class="pulse-icon">
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm1-13h-2v6l5.2 3.1 1-1.6-4.2-2.5V7z" fill="currentColor"/>
+                </svg>
+            </div>
+            <h2 id="alarm-title">Đến giờ hẹn!</h2>
+            <p id="alarm-desc">Nội dung nhắc nhở công việc</p>
+            <div class="alarm-time" id="alarm-time-display">00:00</div>
+            <div class="alarm-actions">
+                <button id="btn-alarm-dismiss" class="btn btn-primary btn-lg">Đã Hoàn Thành</button>
+                <button id="btn-alarm-snooze" class="btn btn-secondary btn-lg">Nhắc Lại Sau 5 Phút</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Form Modal -->
+    <div id="task-modal" class="modal hidden">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3 id="modal-title">Thêm Nhắc Việc Mới</h3>
+                <button class="btn-close" id="btn-close-modal">&times;</button>
+            </div>
+            <form id="task-form" class="modal-body">
+                <input type="hidden" id="task-id">
+                <div class="form-group">
+                    <label for="task-title">Tiêu Đề Công Việc <span class="required">*</span></label>
+                    <input type="text" id="task-title" required placeholder="Nhập tiêu đề việc cần làm...">
+                </div>
+                <div class="form-group">
+                    <label for="task-desc">Chi Tiết / Ghi Chú</label>
+                    <textarea id="task-desc" rows="3" placeholder="Nhập chi tiết công việc..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col">
+                        <label for="task-date">Ngày Nhắc Nhở <span class="required">*</span></label>
+                        <input type="date" id="task-date" required>
+                    </div>
+                    <div class="form-group col">
+                        <label for="task-time">Giờ Nhắc Nhở <span class="required">*</span></label>
+                        <input type="time" id="task-time" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col">
+                        <label for="task-priority">Mức Độ Ưu Tiên</label>
+                        <select id="task-priority">
+                            <option value="low">Thấp</option>
+                            <option value="medium" selected>Trung Bình</option>
+                            <option value="high">Cao</option>
+                        </select>
+                    </div>
+                    <div class="form-group col">
+                        <label for="task-category">Danh Mục</label>
+                        <div class="category-input-wrapper">
+                            <select id="task-category">
+                                <option value="Công việc">💼 Công việc</option>
+                                <option value="Cá nhân">🏠 Cá nhân</option>
+                                <option value="Học tập">📚 Học tập</option>
+                                <option value="Sức khỏe">🍎 Sức khỏe</option>
+                                <option value="Gia đình">❤️ Gia đình</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="task-recurrence">Lặp Lại</label>
+                    <select id="task-recurrence">
+                        <option value="none">Không lặp lại</option>
+                        <option value="daily">Hàng ngày</option>
+                        <option value="weekly">Hàng tuần</option>
+                        <option value="monthly">Hàng tháng</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-task">Hủy</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-task">Lưu Nhắc Việc</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- App Container -->
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="app-sidebar glass">
+            <div class="sidebar-brand">
+                <div class="brand-logo">⏰</div>
+                <div class="brand-info">
+                    <h2>Reminder</h2>
+                    <span>Smart Manager</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-view="dashboard">
+                    <svg class="nav-icon" viewBox="0 0 24 24">
+                        <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
+                    </svg>
+                    <span>Tổng Quan</span>
+                </a>
+                <a href="#tasks" class="nav-item" data-view="tasks">
+                    <svg class="nav-icon" viewBox="0 0 24 24">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+                    </svg>
+                    <span>Việc Cần Làm</span>
+                </a>
+                <a href="#calendar" class="nav-item" data-view="calendar">
+                    <svg class="nav-icon" viewBox="0 0 24 24">
+                        <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/>
+                    </svg>
+                    <span>Lịch Biểu</span>
+                </a>
+                <a href="#kanban" class="nav-item" data-view="kanban">
+                    <svg class="nav-icon" viewBox="0 0 24 24">
+                        <path d="M4 20h4V4H4v16zm6 0h4V4h-4v16zm6 0h4V4h-4v16z"/>
+                    </svg>
+                    <span>Bảng Kanban</span>
+                </a>
+                <a href="#settings" class="nav-item" data-view="settings">
+                    <svg class="nav-icon" viewBox="0 0 24 24">
+                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                    </svg>
+                    <span>Cài Đặt</span>
+                </a>
+            </nav>
+
+            <!-- Quick Stats in Sidebar -->
+            <div class="sidebar-footer">
+                <div class="progress-ring-container">
+                    <svg class="progress-ring" width="80" height="80">
+                        <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.08)" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                        <circle class="progress-ring__circle" id="progress-circle" stroke="var(--accent-color)" stroke-width="6" fill="transparent" r="32" cx="40" cy="40"/>
+                    </svg>
+                    <div class="progress-ring-text" id="progress-text">0%</div>
+                </div>
+                <div class="progress-ring-label">Tiến Độ Hôm Nay</div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <!-- Header bar -->
+            <header class="app-header glass">
+                <div class="header-search">
+                    <svg class="search-icon" viewBox="0 0 24 24">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                    <input type="text" id="search-input" placeholder="Tìm kiếm nhắc nhở, công việc...">
+                </div>
+                <div class="header-actions">
+                    <div id="current-time-clock" class="digital-clock">00:00:00</div>
+                    <button class="btn btn-primary" id="btn-add-task-header">
+                        <span>+ Thêm Mới</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Scrollable Content Viewports -->
+            <div class="content-viewport">
+                <!-- VIEW 1: DASHBOARD -->
+                <section id="view-dashboard" class="app-view">
+                    <div class="welcome-banner glass">
+                        <div class="welcome-text">
+                            <h1 id="welcome-title">Chào bạn!</h1>
+                            <p>Chúc bạn một ngày làm việc hiệu quả. Dưới đây là tóm tắt lịch trình của bạn hôm nay.</p>
+                        </div>
+                        <div class="welcome-img">⏰</div>
+                    </div>
+
+                    <!-- Dashboard Stats Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card glass">
+                            <div class="stat-icon urgent">🚨</div>
+                            <div class="stat-info">
+                                <h3 id="stat-urgent-count">0</h3>
+                                <span>Việc khẩn cấp cần làm</span>
+                            </div>
+                        </div>
+                        <div class="stat-card glass">
+                            <div class="stat-icon today">📅</div>
+                            <div class="stat-info">
+                                <h3 id="stat-today-count">0</h3>
+                                <span>Nhắc nhở hôm nay</span>
+                            </div>
+                        </div>
+                        <div class="stat-card glass">
+                            <div class="stat-icon done">✅</div>
+                            <div class="stat-info">
+                                <h3 id="stat-done-count">0</h3>
+                                <span>Đã hoàn thành</span>
+                            </div>
+                        </div>
+                        <div class="stat-card glass">
+                            <div class="stat-icon ratio">📊</div>
+                            <div class="stat-info">
+                                <h3 id="stat-completion-rate">0%</h3>
+                                <span>Tỷ lệ hoàn thành</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Columns -->
+                    <div class="dashboard-columns">
+                        <!-- Column 1: Today's Reminders -->
+                        <div class="dashboard-col glass">
+                            <div class="col-header">
+                                <h3>🔔 Nhắc nhở sắp tới hôm nay</h3>
+                                <a href="#tasks" class="view-all-link" id="link-view-all-today">Xem tất cả</a>
+                            </div>
+                            <div class="today-reminders-list" id="today-reminders-container">
+                                <div class="empty-state">
+                                    <p>Không có nhắc nhở nào trong hôm nay!</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Categories distribution and Quick action -->
+                        <div class="dashboard-col glass">
+                            <div class="col-header">
+                                <h3>⚡ Thêm nhanh nhắc việc</h3>
+                            </div>
+                            <form id="quick-add-form" class="quick-add-form">
+                                <input type="text" id="quick-task-title" required placeholder="Hôm nay tôi cần phải...">
+                                <div class="quick-add-row">
+                                    <input type="time" id="quick-task-time" required>
+                                    <select id="quick-task-priority">
+                                        <option value="low">Thấp</option>
+                                        <option value="medium" selected>Trung Bình</option>
+                                        <option value="high">Cao</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-primary">Thêm</button>
+                                </div>
+                            </form>
+
+                            <div class="category-breakdown">
+                                <h3>📂 Thống kê theo danh mục</h3>
+                                <div id="category-bars-container" class="category-bars">
+                                    <!-- Dynamic bars go here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW 2: TASKS LIST -->
+                <section id="view-tasks" class="app-view hidden">
+                    <div class="view-header">
+                        <h2>Danh Sách Việc Cần Làm</h2>
+                        <div class="view-filters glass">
+                            <div class="filter-group">
+                                <label>Lọc Trạng Thái:</label>
+                                <select id="filter-status">
+                                    <option value="all">Tất cả</option>
+                                    <option value="todo">Chưa hoàn thành</option>
+                                    <option value="inprogress">Đang thực hiện</option>
+                                    <option value="completed">Đã hoàn thành</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Độ Ưu Tiên:</label>
+                                <select id="filter-priority">
+                                    <option value="all">Tất cả</option>
+                                    <option value="high">Cao</option>
+                                    <option value="medium">Trung bình</option>
+                                    <option value="low">Thấp</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Danh Mục:</label>
+                                <select id="filter-category">
+                                    <option value="all">Tất cả</option>
+                                    <!-- Loaded dynamically -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tasks Table / Container -->
+                    <div class="tasks-table-container glass">
+                        <table class="tasks-table">
+                            <thead>
+                                <tr>
+                                    <th width="5%"></th>
+                                    <th width="40%">Tiêu đề</th>
+                                    <th width="15%">Thời gian nhắc</th>
+                                    <th width="12%">Ưu tiên</th>
+                                    <th width="13%">Danh mục</th>
+                                    <th width="15%">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasks-table-body">
+                                <!-- Dynamic rows go here -->
+                            </tbody>
+                        </table>
+                        <div class="empty-state hidden" id="tasks-empty-state">
+                            <p>Không tìm thấy công việc nào phù hợp với bộ lọc!</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW 3: CALENDAR -->
+                <section id="view-calendar" class="app-view hidden">
+                    <div class="view-header flex-between">
+                        <h2>Lịch Biểu Nhắc Việc</h2>
+                        <div class="calendar-controls">
+                            <button id="btn-cal-prev" class="btn btn-icon">&lt;</button>
+                            <h3 id="calendar-month-year">Tháng 06, 2026</h3>
+                            <button id="btn-cal-next" class="btn btn-icon">&gt;</button>
+                        </div>
+                    </div>
+                    <div class="calendar-wrapper glass">
+                        <div class="calendar-weekdays">
+                            <div>CN</div>
+                            <div>T2</div>
+                            <div>T3</div>
+                            <div>T4</div>
+                            <div>T5</div>
+                            <div>T6</div>
+                            <div>T7</div>
+                        </div>
+                        <div class="calendar-days" id="calendar-days-grid">
+                            <!-- Dynamic days here -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW 4: KANBAN BOARD -->
+                <section id="view-kanban" class="app-view hidden">
+                    <div class="view-header">
+                        <h2>Bảng Quản Lý Trạng Thái (Kanban)</h2>
+                        <p>Kéo thả công việc hoặc nhấn chuyển đổi để cập nhật trạng thái làm việc.</p>
+                    </div>
+                    <div class="kanban-board">
+                        <!-- Column 1: To Do -->
+                        <div class="kanban-column glass" data-status="todo">
+                            <div class="kanban-column-header todo-hdr">
+                                <h3>Chưa Thực Hiện</h3>
+                                <span class="kanban-badge" id="badge-todo">0</span>
+                            </div>
+                            <div class="kanban-cards" id="kanban-todo-cards">
+                                <!-- Cards -->
+                            </div>
+                        </div>
+
+                        <!-- Column 2: In Progress -->
+                        <div class="kanban-column glass" data-status="inprogress">
+                            <div class="kanban-column-header inprogress-hdr">
+                                <h3>Đang Thực Hiện</h3>
+                                <span class="kanban-badge" id="badge-inprogress">0</span>
+                            </div>
+                            <div class="kanban-cards" id="kanban-inprogress-cards">
+                                <!-- Cards -->
+                            </div>
+                        </div>
+
+                        <!-- Column 3: Completed -->
+                        <div class="kanban-column glass" data-status="completed">
+                            <div class="kanban-column-header completed-hdr">
+                                <h3>Đã Hoàn Thành</h3>
+                                <span class="kanban-badge" id="badge-completed">0</span>
+                            </div>
+                            <div class="kanban-cards" id="kanban-completed-cards">
+                                <!-- Cards -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- VIEW 5: SETTINGS -->
+                <section id="view-settings" class="app-view hidden">
+                    <h2>Cài Đặt Hệ Thống</h2>
+                    <div class="settings-grid">
+                        <!-- Section 1: Themes -->
+                        <div class="settings-card glass">
+                            <h3>🎨 Giao Diện Hệ Thống</h3>
+                            <p>Thay đổi giao diện màu sắc phù hợp với sở thích của bạn.</p>
+                            <div class="theme-selector">
+                                <button class="theme-btn theme-dark active" data-theme="dark">
+                                    <div class="theme-preview" style="background: #111422;"></div>
+                                    <span>Tối Huyền Bí (Mặc định)</span>
+                                </button>
+                                <button class="theme-btn theme-light" data-theme="light">
+                                    <div class="theme-preview" style="background: #f4f6fc;"></div>
+                                    <span>Sáng Sang Trọng</span>
+                                </button>
+                                <button class="theme-btn theme-cyber" data-theme="cyber">
+                                    <div class="theme-preview" style="background: #0f172a; border: 2px solid #00f0ff;"></div>
+                                    <span>Cyberpunk Neon</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Section 2: Notifications sound -->
+                        <div class="settings-card glass">
+                            <h3>🔊 Âm Thanh Nhắc Việc</h3>
+                            <p>Tùy chỉnh kiểu chuông báo và kiểm tra âm lượng loa thông báo.</p>
+                            <div class="form-group">
+                                <label for="setting-sound-type">Kiểu chuông nhắc nhở:</label>
+                                <select id="setting-sound-type">
+                                    <option value="bell">Soft Bell (Chuông nhẹ nhàng)</option>
+                                    <option value="digital">Digital Alert (Báo thức số)</option>
+                                    <option value="siren">Echo Pulse (Báo thức dồn dập)</option>
+                                </select>
+                            </div>
+                            <button id="btn-test-sound" class="btn btn-secondary">
+                                🔊 Phát thử chuông báo
+                            </button>
+                        </div>
+
+                        <!-- Section 3: Browser notifications permission -->
+                        <div class="settings-card glass">
+                            <h3>🖥️ Thông Báo Trình Duyệt</h3>
+                            <p>Bật thông báo hệ thống để nhận lời nhắc ngay cả khi tab này đang ẩn.</p>
+                            <div class="permission-status">
+                                <span class="status-label">Trạng thái:</span>
+                                <span id="notification-status-badge" class="badge badge-warning">Chưa cấp quyền</span>
+                            </div>
+                            <button id="btn-request-permission" class="btn btn-primary">
+                                Yêu Cầu Quyền Thông Báo
+                            </button>
+                        </div>
+
+                        <!-- Section 4: Data management -->
+                        <div class="settings-card glass danger-zone">
+                            <h3 class="text-danger">⚠️ Vùng Nguy Hiểm</h3>
+                            <p>Xóa toàn bộ dữ liệu nhắc việc hiện tại và thiết lập lại ứng dụng ban đầu.</p>
+                            <button id="btn-clear-data" class="btn btn-danger">
+                                Xóa Toàn Bộ Dữ Liệu
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/notifications.js"></script>
+    <script src="js/calendar.js"></script>
+    <script src="js/kanban.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
