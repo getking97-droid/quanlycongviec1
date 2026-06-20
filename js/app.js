@@ -82,10 +82,14 @@ const ReminderApp = {
             const soundSelect = document.getElementById('setting-sound-type');
             if (soundSelect) soundSelect.value = ReminderNotifications.soundType;
 
-            // Set Telegram Chat ID input state
+            // Set Telegram Chat ID and Gemini API Key input state
             const telegramInput = document.getElementById('setting-telegram-chatid');
             if (telegramInput) {
                 telegramInput.value = localStorage.getItem('telegram_chat_id') || '';
+            }
+            const geminiInput = document.getElementById('setting-gemini-key');
+            if (geminiInput) {
+                geminiInput.value = localStorage.getItem('gemini_api_key') || '';
             }
         } catch (e) {
             console.error("Lỗi khi tải cấu hình từ localStorage:", e);
@@ -309,13 +313,29 @@ const ReminderApp = {
             ReminderNotifications.requestPermission();
         });
 
-        // Save Telegram Chat ID
+        // Save Telegram Chat ID & Gemini API Key
         document.getElementById('btn-save-telegram').addEventListener('click', () => {
             const chatInput = document.getElementById('setting-telegram-chatid');
-            if (chatInput) {
-                const val = chatInput.value.trim();
-                localStorage.setItem('telegram_chat_id', val);
-                alert("Đã cấu hình nhận tin nhắn Telegram thành công!");
+            const geminiInput = document.getElementById('setting-gemini-key');
+            
+            const chatVal = chatInput ? chatInput.value.trim() : '';
+            const geminiVal = geminiInput ? geminiInput.value.trim() : '';
+            
+            localStorage.setItem('telegram_chat_id', chatVal);
+            localStorage.setItem('gemini_api_key', geminiVal);
+            
+            // Sync Gemini key to Firestore for the background Telegram Bot daemon
+            if (isFirebaseEnabled() && firestoreDb) {
+                firestoreDb.collection('settings').doc('config').set({
+                    geminiApiKey: geminiVal
+                }).then(() => {
+                    alert("Đã cấu hình nhận tin nhắn Telegram và đồng bộ khóa AI thành công!");
+                }).catch(err => {
+                    console.error("Lỗi khi lưu cấu hình AI lên Firestore:", err);
+                    alert("Đã lưu cục bộ. Lỗi đồng bộ Cloud Firestore: " + err.message);
+                });
+            } else {
+                alert("Đã lưu cấu hình Telegram và khóa AI cục bộ thành công!");
             }
         });
 
