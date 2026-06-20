@@ -114,6 +114,19 @@ const ReminderNotifications = {
         
         // Try displaying HTML5 push notification
         this.showPushNotification(task);
+
+        // Send alert to Telegram if Chat ID is configured
+        const tgChatId = localStorage.getItem('telegram_chat_id');
+        if (tgChatId) {
+            const botToken = "8837753488:AAF2I8nWU9zBMR1813mcgEuxqKSWvCuvtEM";
+            const text = `⏰ *NHẮC NHỞ CÔNG VIỆC:*\n\n📌 *Tiêu đề:* ${task.title}\n📝 *Mô tả:* ${task.desc || "Không có chi tiết"}\n📅 *Thời gian:* ${task.date} lúc \`${task.time}\`\n🚨 *Mức độ:* ${task.priority === 'high' ? 'Cao 🔴' : task.priority === 'medium' ? 'Trung bình 🟡' : 'Thấp 🟢'}`;
+            
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: tgChatId, text: text, parse_mode: 'Markdown' })
+            }).catch(e => console.error("Lỗi gửi tin nhắn Telegram:", e));
+        }
         
         // Show Alarm Overlay UI
         const overlay = document.getElementById('alarm-overlay');

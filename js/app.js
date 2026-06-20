@@ -81,6 +81,12 @@ const ReminderApp = {
             // Set alarm sound dropdown state
             const soundSelect = document.getElementById('setting-sound-type');
             if (soundSelect) soundSelect.value = ReminderNotifications.soundType;
+
+            // Set Telegram Chat ID input state
+            const telegramInput = document.getElementById('setting-telegram-chatid');
+            if (telegramInput) {
+                telegramInput.value = localStorage.getItem('telegram_chat_id') || '';
+            }
         } catch (e) {
             console.error("Lỗi khi tải cấu hình từ localStorage:", e);
             if (!this.tasks || this.tasks.length === 0) {
@@ -301,6 +307,16 @@ const ReminderApp = {
         // Request Push Notification Permissions
         document.getElementById('btn-request-permission').addEventListener('click', () => {
             ReminderNotifications.requestPermission();
+        });
+
+        // Save Telegram Chat ID
+        document.getElementById('btn-save-telegram').addEventListener('click', () => {
+            const chatInput = document.getElementById('setting-telegram-chatid');
+            if (chatInput) {
+                const val = chatInput.value.trim();
+                localStorage.setItem('telegram_chat_id', val);
+                alert("Đã cấu hình nhận tin nhắn Telegram thành công!");
+            }
         });
 
         // Alarm overlay actions
