@@ -244,8 +244,12 @@ async function callPollinationsNLP(text, currentTasks) {
         `Tin nhắn của người dùng: "${text}"`;
 
     const url = "https://text.pollinations.ai/" + encodeURIComponent(systemPrompt) + "?json=true";
-    const res = await fetch(url, { method: 'POST' });
-    if (!res.ok) throw new Error("Pollinations API Error");
+    const res = await fetch(url);
+    if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Pollinations API response:", errorText);
+        throw new Error("Pollinations API Error");
+    }
     const textRes = await res.text();
     
     const cleanText = textRes.replace(/```json/gi, '').replace(/```/g, '').trim();
